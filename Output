@@ -1,1 +1,95 @@
+Daily Sales Forecast Report
 
+Generated: July 21, 2026
+Forecast Horizon: 7 Days
+Method: Same Weekday Trimmed Mean (6 Weeks)
+Multiplier: 1.00 (No Event Adjustment)
+
+Date	Store ID	Store Name	Forecast Sales	Confidence
+2026-07-22	101	Taco Bell	$2,520	High
+2026-07-22	102	Pizza Hut	$1,980	High
+2026-07-22	103	Caribou Coffee	$3,210	High
+2026-07-23	101	Taco Bell	$2,640	High
+2026-07-23	102	Pizza Hut	$2,050	High
+2026-07-23	103	Caribou Coffee	$3,350	High
+Executive Summary View
+Store	Last Week Actual	Next Week Forecast	Change
+Taco Bell	$17,850	$18,240	+2.2%
+Pizza Hut	$14,200	$14,750	+3.9%
+Caribou Coffee	$21,600	$22,450	+3.9%
+Total Food Court	$53,650	$55,440	+3.3%
+Forecast Detail Report
+Store 101 – Taco Bell
+Day	Forecast
+Monday	$2,450
+Tuesday	$2,520
+Wednesday	$2,580
+Thursday	$2,640
+Friday	$2,950
+Saturday	$3,180
+Sunday	$1,920
+
+Weekly Forecast: $18,240
+
+Store 102 – Pizza Hut
+Day	Forecast
+Monday	$1,920
+Tuesday	$1,980
+Wednesday	$2,010
+Thursday	$2,050
+Friday	$2,320
+Saturday	$2,600
+Sunday	$1,870
+
+Weekly Forecast: $14,750
+
+Store 103 – Caribou Coffee
+Day	Forecast
+Monday	$3,050
+Tuesday	$3,210
+Wednesday	$3,240
+Thursday	$3,350
+Friday	$3,600
+Saturday	$3,800
+Sunday	$2,200
+
+Weekly Forecast: $22,450
+
+Operations Recommendations
+Labor Planning
+Store	Recommended Action
+Taco Bell	Increase Friday staffing by 1 team member
+Pizza Hut	Maintain current staffing levels
+Caribou Coffee	Add coverage for Saturday peak periods
+Prep Planning
+Store	Recommendation
+Taco Bell	Increase Friday/Saturday prep levels
+Pizza Hut	Maintain standard prep volumes
+Caribou Coffee	Increase bakery and cold beverage inventory
+Executive Dashboard Example
+FOOD COURT SALES FORECAST
+─────────────────────────
+
+Tomorrow Forecast
+─────────────────────────
+Taco Bell        $2,520
+Pizza Hut        $1,980
+Caribou Coffee   $3,210
+
+Total Forecast   $7,710
+
+vs Last Week     +3.1%
+vs Last Month    +2.4%
+
+Forecast Confidence: HIGH
+Future Version (What CEOs Love)
+
+Eventually, your dashboard could include:
+
+Metric	Forecast
+Sales	$55,440
+Guests	6,850
+Labor Hours	1,220
+Food Cost	$15,950
+Waste Risk	Low
+Staffing Recommendation	+2 Friday, +3 Saturday
