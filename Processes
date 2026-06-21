@@ -1,1 +1,386 @@
+Restaurant Sales Forecasting System
+Implementation Process Breakdown
+Phase 1: Define the Business Goal
+Objective
 
+Build a forecasting system that predicts 7-day net sales by store using historical sales data.
+
+Primary goal
+
+Give managers a reliable starting point for:
+
+labor scheduling
+prep planning
+inventory ordering
+daily operational planning
+Initial scope
+
+Start with only:
+
+date
+store_id
+net_sales
+
+Do not start with labor, weather, guest counts, or inventory yet. Keep phase one simple and focused.
+
+Phase 2: Identify Required Data
+Required input data
+Field	Description	Example
+date	Business date of sales	2026-03-01
+store_id	Unique store identifier	101
+net_sales	Daily net sales total	2520.75
+Example CSV
+date,store_id,net_sales
+2026-03-01,101,2250.00
+2026-03-02,101,2410.00
+2026-03-03,102,1980.50
+Recommended history
+Data Amount	Usefulness
+8–12 weeks	Minimum usable baseline
+3–6 months	Better pilot dataset
+12+ months	Best for seasonality and trends
+Phase 3: Data Collection Process
+Steps
+Export historical sales data from POS or reporting system.
+Save the file as a CSV.
+Confirm each row represents one store and one date.
+Store the file in a controlled input folder.
+Suggested folder
+restaurant_forecasting/
+│
+├── data/
+│   └── sales_history.csv
+Data rule
+
+Only use the fields needed for forecasting. Do not include unnecessary sensitive business data.
+
+Phase 4: Data Cleaning Process
+
+Before running the forecast, clean and validate the file.
+
+Cleaning checklist
+Confirm dates are formatted correctly.
+Confirm store_id values are consistent.
+Confirm net_sales is numeric.
+Remove duplicate rows.
+Check for missing sales days.
+Remove blank values.
+Investigate negative sales values.
+Confirm each store has enough history.
+Common problems
+Problem	Example	Fix
+Inconsistent IDs	101, Store 101, Taco Bell	Standardize to one store_id
+Missing dates	No Sunday sales row	Confirm if closed or missing export
+Bad values	$2,500 stored as text	Convert to numeric
+Duplicates	Same store/date appears twice	Remove or consolidate
+Phase 5: Forecasting Logic
+Baseline model
+
+The first model uses a trimmed mean approach.
+
+How it works
+
+To forecast next Monday:
+
+Find the last six Mondays for that store.
+Remove the highest Monday.
+Remove the lowest Monday.
+Average the remaining four Mondays.
+Apply optional multiplier if needed.
+Example
+
+Last six Mondays:
+
+2100, 2250, 2400, 2600, 1900, 2350
+
+Remove:
+
+High: 2600
+Low: 1900
+
+Average remaining:
+
+2100 + 2250 + 2400 + 2350 = 9100
+9100 / 4 = 2275
+
+Apply 10% multiplier:
+
+2275 × 1.10 = 2502.50
+
+Forecast:
+
+$2,503
+Phase 6: Build the Python Environment
+Recommended setup
+
+Use a dedicated workstation or VM.
+
+Folder structure
+restaurant_forecasting/
+│
+├── data/
+│   └── sales_history.csv
+│
+├── scripts/
+│   └── forecast_trimmed_mean.py
+│
+├── output/
+│   └── forecast.csv
+│
+├── requirements.txt
+└── README.md
+Install Python packages
+
+Create virtual environment:
+
+python -m venv venv
+
+Activate it:
+
+venv\Scripts\activate
+
+Install packages:
+
+pip install -r requirements.txt
+
+Basic requirements.txt:
+
+pandas
+numpy
+
+Optional later:
+
+torch
+Phase 7: Run the Forecast Script
+Command
+python scripts\forecast_trimmed_mean.py --input data\sales_history.csv --output output\forecast.csv --horizon 7 --multiplier 1.00
+Expected output
+date,store_id,forecast_net_sales,base_forecast,multiplier,method
+2026-03-12,101,2520.00,2520.00,1.00,same_weekday_trimmed_mean
+2026-03-13,101,2600.00,2600.00,1.00,same_weekday_trimmed_mean
+Phase 8: Validate the Forecast
+Purpose
+
+Confirm whether the model is useful before giving it to managers.
+
+Validation process
+Choose a past week.
+Pretend you did not know the actual sales.
+Run the model using only data before that week.
+Compare forecast vs actual sales.
+Measure error percentage.
+Accuracy formula
+Error % = ABS(Actual - Forecast) / Actual × 100
+Example
+Date	Store	Forecast	Actual	Error
+2026-03-12	101	$2,500	$2,600	3.85%
+2026-03-13	101	$2,700	$2,550	5.88%
+Target
+
+For phase one, aim to see whether the model is consistently better than manual forecasting.
+
+Phase 9: Pilot Program
+Pilot size
+
+Start with:
+
+2–5 stores
+2–4 weeks
+daily net sales only
+Pilot goals
+test forecast accuracy
+gather manager feedback
+identify weak forecast days
+determine whether the model helps planning
+Manager feedback questions
+Was the forecast close enough to be useful?
+Did it help with labor planning?
+Did it help with prep planning?
+Which days were inaccurate?
+Were there events or promotions the model missed?
+Phase 10: Reporting Process
+Manager-facing report should include
+Field	Description
+date	forecast date
+store_id	store identifier
+store_name	readable store name
+forecast_net_sales	predicted sales
+multiplier	adjustment used
+notes	holiday/event/promo explanation
+Example
+Date	Store	Forecast Sales	Notes
+2026-03-12	Store 101	$2,520	Normal forecast
+2026-03-13	Store 102	$2,950	Event multiplier
+Best delivery method
+
+Start simple:
+
+Excel
+CSV
+shared folder
+emailed report
+
+Dashboard can come later.
+
+Phase 11: IT and Security Controls
+Recommended controls
+Control	Purpose
+Dedicated VM/workstation	isolates forecasting workload
+Least privilege access	limits data exposure
+Read-only source access	protects POS/reporting data
+Write-only report output	controls report generation
+Virtual environment	isolates Python packages
+No POS write-back	reduces operational risk
+Logging	tracks script runs and failures
+Security model
+Sales Export Folder → Forecast VM → Output Report Folder
+
+The script should not directly modify POS or operational systems.
+
+Phase 12: Automation
+
+Once the pilot works, automate the workflow.
+
+Daily process
+Sales export is updated.
+Forecast script runs.
+Forecast report is generated.
+Managers receive or access report.
+Actual sales are later compared against forecast.
+Windows Task Scheduler flow
+
+Create a batch file:
+
+cd C:\restaurant_forecasting
+call venv\Scripts\activate
+python scripts\forecast_trimmed_mean.py --input data\sales_history.csv --output output\forecast.csv --horizon 7 --multiplier 1.00
+
+Schedule it to run daily.
+
+Phase 13: Weekly Accuracy Review
+Review every week
+
+Track:
+
+average error percentage
+best-performing store
+worst-performing store
+days with large misses
+reason for forecast misses
+Accuracy report example
+Store	Avg Error	Notes
+101	5.2%	Strong weekday accuracy
+102	8.9%	Event days need multiplier
+103	12.1%	Missing historical data
+Phase 14: Improve the Model
+
+After the baseline works, add more features.
+
+Possible enhancements
+Feature	Benefit
+holidays	improves seasonal forecasting
+local events	accounts for traffic spikes
+promotions	adjusts for sales pushes
+weather	useful for traffic-sensitive locations
+guest counts	improves labor forecasting
+average check	separates traffic from spending
+Upgrade path
+Net Sales Forecast
+      ↓
+Guest Forecast
+      ↓
+Labor Forecast
+      ↓
+Inventory / Prep Forecast
+Phase 15: Optional Machine Learning Model
+
+Only move to PyTorch or ML after the baseline model proves value.
+
+Use ML when
+you have enough clean history
+multiple stores are involved
+event/holiday/weather variables are available
+baseline forecasts are useful but limited
+you want automatic pattern learning
+Do not use ML just because it sounds advanced.
+
+The baseline model is easier to explain and easier to approve.
+
+Phase 16: GitHub / Portfolio Documentation
+Upload to GitHub
+
+Include:
+
+README.md
+requirements.txt
+.gitignore
+scripts/
+data/sample_sales_data.csv
+output/forecast_example.csv
+docs/
+Do not upload
+real company sales data
+labor files
+internal reports
+credentials
+private exports
+Portfolio value
+
+This project shows:
+
+Python
+data analytics
+business operations understanding
+secure implementation planning
+forecasting logic
+documentation
+GitHub project management
+Phase 17: Final Production Process
+Production workflow
+Daily Sales Export
+        ↓
+Clean / Validate Data
+        ↓
+Run Forecast Script
+        ↓
+Generate Forecast Report
+        ↓
+Manager Review
+        ↓
+Compare Actual vs Forecast
+        ↓
+Improve Model
+
+This turns the project from a script into a real operating process.
+
+Implementation Roles
+Role	Responsibility
+Operations	define business needs and review forecasts
+IT	provide secure environment and access
+Analyst / Developer	maintain script and validate accuracy
+Store Managers	use forecast and provide feedback
+Leadership	approve pilot and expansion
+Recommended Timeline
+Week 1
+collect data
+clean CSV
+build folder structure
+run first forecast
+Week 2
+validate against historical actuals
+create manager report
+fix data issues
+Weeks 3–4
+pilot with selected stores
+compare forecast to actual sales
+gather manager feedback
+Month 2
+automate daily script
+add multipliers
+build weekly accuracy report
+Month 3
+decide whether to expand
+consider dashboard or machine learning
+Executive Summary Version
+
+The implementation should begin with a controlled pilot using existing sales export data. The first version should forecast daily net sales by store using a simple trimmed-average model. The system should run in a dedicated, secure Python environment with read-only access to source data and report-only output. After a 2–4 week pilot, the organization can evaluate forecast accuracy, manager usefulness, and whether to expand into guest counts, labor forecasting, inventory planning, or machine learning enhancements.
