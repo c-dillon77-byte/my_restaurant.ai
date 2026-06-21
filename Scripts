@@ -1,1 +1,317 @@
+#!/usr/bin/env python3
+"""
+forecast_pytorch.py
 
+Trains a simple regression model in PyTorch to predict net_sales using:
+- store_id embedding
+- weekday cyclical features
+- time trend
+- baseline trimmed-mean forecast feature (your rule)
+
+Then forecasts next N days per store.
+
+Usage:
+  python forecast_pytorch.py --input sales.csv --output forecast_pt.csv --horizon 7 --epochs 200 --multiplier 1.0
+
+Requirements:
+  pip install pandas numpy torch
+"""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass
+from datetime import timedelta
+from typing import Dict, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+import torch
+import torch.nn as nn
+
+
+@dataclass
+class Config:
+    input_path: str
+    output_path: str
+    horizon: int
+    epochs: int
+    lr: float
+    batch_size: int
+    multiplier: float
+    min_points: int
+    seed: int
+
+
+def _parse_args() -> Config:
+    p = argparse.ArgumentParser()
+    p.add_argument("--input", required=True)
+    p.add_argument("--output", required=True)
+    p.add_argument("--horizon", type=int, default=7)
+    p.add_argument("--epochs", type=int, default=200)
+    p.add_argument("--lr", type=float, default=1e-3)
+    p.add_argument("--batch-size", type=int, default=256)
+    p.add_argument("--multiplier", type=float, default=1.0)
+    p.add_argument("--min-points", type=int, default=6)
+    p.add_argument("--seed", type=int, default=42)
+    a = p.parse_args()
+    return Config(
+        input_path=a.input,
+        output_path=a.output,
+        horizon=a.horizon,
+        epochs=a.epochs,
+        lr=a.lr,
+        batch_size=a.batch_size,
+        multiplier=a.multiplier,
+        min_points=a.min_points,
+        seed=a.seed,
+    )
+
+
+def set_seed(seed: int) -> None:
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+
+def trimmed_mean(values: np.ndarray) -> Optional[float]:
+    if values is None or len(values) < 3:
+        return None
+    v = np.sort(values)
+    v = v[1:-1]  # drop lowest and highest
+    if len(v) == 0:
+        return None
+    return float(v.mean())
+
+
+def build_baseline_feature(df: pd.DataFrame, min_points: int) -> pd.Series:
+    """
+    For each row, compute baseline for that row's date using prior history:
+    last `min_points` same-weekday net_sales for that store, trimmed high/low, average.
+    If insufficient history, NaN.
+    """
+    df = df.sort_values(["store_id", "date"]).copy()
+    df["weekday"] = df["date"].dt.weekday
+    baseline = np.full(len(df), np.nan, dtype=np.float32)
+
+    # group indices for speed
+    for store, idxs in df.groupby("store_id").indices.items():
+        sidx = np.array(idxs)
+        sdf = df.loc[sidx]
+        # for each weekday, keep rolling list of seen values
+        seen: Dict[int, list] = {d: [] for d in range(7)}
+        for j, (row_i, wd, y) in enumerate(zip(sdf.index, sdf["weekday"].values, sdf["net_sales"].values)):
+            hist = seen[int(wd)]
+            if len(hist) >= min_points:
+                last_vals = np.array(hist[-min_points:], dtype=np.float32)
+                tm = trimmed_mean(last_vals)
+                baseline[np.where(df.index == row_i)[0][0]] = tm if tm is not None else float(last_vals.mean())
+            # add current y to seen AFTER computing baseline (so it is "prior history")
+            hist.append(float(y))
+
+    return pd.Series(baseline, index=df.index, name="baseline")
+
+
+class ForecastNet(nn.Module):
+    def __init__(self, num_stores: int, emb_dim: int = 8, hidden: int = 32):
+        super().__init__()
+        self.store_emb = nn.Embedding(num_stores, emb_dim)
+        self.mlp = nn.Sequential(
+            nn.Linear(emb_dim + 4, hidden),  # 4 numeric features below
+            nn.ReLU(),
+            nn.Linear(hidden, hidden),
+            nn.ReLU(),
+            nn.Linear(hidden, 1),
+        )
+
+    def forward(self, store_idx: torch.Tensor, x_num: torch.Tensor) -> torch.Tensor:
+        emb = self.store_emb(store_idx)
+        x = torch.cat([emb, x_num], dim=1)
+        return self.mlp(x).squeeze(1)
+
+
+def make_features(df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Returns:
+      store_idx (N,)
+      x_num (N,4): [sin_wd, cos_wd, trend, baseline]
+      y (N,)
+    """
+    wd = df["date"].dt.weekday.values.astype(np.float32)
+    sin_wd = np.sin(2 * np.pi * wd / 7.0).astype(np.float32)
+    cos_wd = np.cos(2 * np.pi * wd / 7.0).astype(np.float32)
+
+    # simple trend: days since first date in dataset (global)
+    t0 = df["date"].min()
+    trend = (df["date"] - t0).dt.days.values.astype(np.float32)
+
+    baseline = df["baseline"].values.astype(np.float32)
+
+    x_num = np.stack([sin_wd, cos_wd, trend, baseline], axis=1)
+    store_idx = df["store_idx"].values.astype(np.int64)
+    y = df["net_sales"].values.astype(np.float32)
+    return store_idx, x_num, y
+
+
+def train_model(cfg: Config, df: pd.DataFrame, num_stores: int) -> ForecastNet:
+    device = torch.device("cpu")
+    model = ForecastNet(num_stores=num_stores).to(device)
+    opt = torch.optim.Adam(model.parameters(), lr=cfg.lr)
+    loss_fn = nn.MSELoss()
+
+    store_idx, x_num, y = make_features(df)
+
+    # Standardize numeric features (except store embedding)
+    x_mean = x_num.mean(axis=0, keepdims=True)
+    x_std = x_num.std(axis=0, keepdims=True) + 1e-6
+    x_num_std = (x_num - x_mean) / x_std
+
+    # Save scalers on model for later
+    model.x_mean = torch.tensor(x_mean, dtype=torch.float32)
+    model.x_std = torch.tensor(x_std, dtype=torch.float32)
+
+    N = len(df)
+    idx = np.arange(N)
+    np.random.shuffle(idx)
+
+    # train/val split
+    split = int(N * 0.85)
+    tr_idx, va_idx = idx[:split], idx[split:]
+
+    def batches(idxs: np.ndarray, bs: int):
+        for k in range(0, len(idxs), bs):
+            yield idxs[k : k + bs]
+
+    for epoch in range(1, cfg.epochs + 1):
+        model.train()
+        tr_losses = []
+        for b in batches(tr_idx, cfg.batch_size):
+            s = torch.tensor(store_idx[b], dtype=torch.long, device=device)
+            x = torch.tensor(x_num_std[b], dtype=torch.float32, device=device)
+            yt = torch.tensor(y[b], dtype=torch.float32, device=device)
+            pred = model(s, x)
+            loss = loss_fn(pred, yt)
+
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+            tr_losses.append(loss.item())
+
+        if epoch % 25 == 0 or epoch == 1 or epoch == cfg.epochs:
+            model.eval()
+            with torch.no_grad():
+                s = torch.tensor(store_idx[va_idx], dtype=torch.long, device=device)
+                x = torch.tensor(x_num_std[va_idx], dtype=torch.float32, device=device)
+                yt = torch.tensor(y[va_idx], dtype=torch.float32, device=device)
+                pred = model(s, x)
+                va_loss = loss_fn(pred, yt).item()
+            print(f"Epoch {epoch:>4}/{cfg.epochs} | train MSE {np.mean(tr_losses):.2f} | val MSE {va_loss:.2f}")
+
+    return model
+
+
+def compute_baseline_for_future(store_hist: pd.DataFrame, target_date: pd.Timestamp, min_points: int) -> float:
+    """
+    Baseline for target_date using store_hist prior dates only.
+    """
+    wd = int(target_date.weekday())
+    same = store_hist[store_hist["date"].dt.weekday == wd].sort_values("date")
+    vals = same["net_sales"].tail(min_points).values.astype(np.float32)
+
+    if len(vals) < min_points:
+        # fallback: mean last 14 days
+        fb = store_hist.sort_values("date")["net_sales"].tail(14).values.astype(np.float32)
+        return float(fb.mean()) if len(fb) else 0.0
+
+    tm = trimmed_mean(vals)
+    return tm if tm is not None else float(vals.mean())
+
+
+def main() -> None:
+    cfg = _parse_args()
+    set_seed(cfg.seed)
+
+    df = pd.read_csv(cfg.input_path)
+    needed = {"date", "store_id", "net_sales"}
+    missing = needed - set(df.columns)
+    if missing:
+        raise ValueError(f"Missing required columns: {sorted(missing)}")
+
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    df["net_sales"] = pd.to_numeric(df["net_sales"], errors="coerce")
+    df = df.dropna(subset=["date", "store_id", "net_sales"]).copy()
+    df["store_id"] = df["store_id"].astype(str)
+
+    # Map store_id -> integer index for embedding
+    stores = sorted(df["store_id"].unique().tolist())
+    store_to_idx = {s: i for i, s in enumerate(stores)}
+    df["store_idx"] = df["store_id"].map(store_to_idx).astype(int)
+
+    # Build baseline feature for training rows
+    df = df.sort_values(["store_id", "date"]).copy()
+    df["baseline"] = build_baseline_feature(df[["date", "store_id", "net_sales"]].assign(store_id=df["store_id"]), cfg.min_points)
+    df["baseline"] = df["baseline"].astype(np.float32)
+
+    # Train only where baseline exists (otherwise the model is learning from weaker signals)
+    train_df = df.dropna(subset=["baseline"]).copy()
+    if len(train_df) < 200:
+        raise ValueError(
+            f"Not enough training rows with baseline computed (got {len(train_df)}). "
+            f"Add more history or lower --min-points."
+        )
+
+    model = train_model(cfg, train_df.assign(store_idx=train_df["store_idx"]), num_stores=len(stores))
+    model.eval()
+
+    # Forecast horizon starting the day after the last date in dataset (global)
+    last_date = df["date"].max().normalize()
+    start_date = last_date + pd.Timedelta(days=1)
+
+    # For scaling numeric features, reuse model scalers
+    x_mean = model.x_mean.numpy()
+    x_std = model.x_std.numpy()
+
+    out_rows = []
+    for store in stores:
+        hist = df[df["store_id"] == store].sort_values("date").copy()
+        sidx = store_to_idx[store]
+
+        for h in range(cfg.horizon):
+            f_date = start_date + pd.Timedelta(days=h)
+
+            baseline = compute_baseline_for_future(hist, f_date, cfg.min_points)
+
+            wd = float(f_date.weekday())
+            sin_wd = np.sin(2 * np.pi * wd / 7.0).astype(np.float32)
+            cos_wd = np.cos(2 * np.pi * wd / 7.0).astype(np.float32)
+            trend = float((f_date - df["date"].min().normalize()).days)
+
+            x_num = np.array([[sin_wd, cos_wd, trend, baseline]], dtype=np.float32)
+            x_num_std = (x_num - x_mean) / x_std
+
+            with torch.no_grad():
+                pred = model(
+                    torch.tensor([sidx], dtype=torch.long),
+                    torch.tensor(x_num_std, dtype=torch.float32),
+                ).item()
+
+            pred_adj = pred * cfg.multiplier
+
+            out_rows.append(
+                {
+                    "date": f_date.date().isoformat(),
+                    "store_id": store,
+                    "forecast_net_sales": round(pred_adj, 2),
+                    "model_pred": round(pred, 2),
+                    "baseline_feature": round(baseline, 2),
+                    "multiplier": cfg.multiplier,
+                    "method": "pytorch_model_with_baseline_feature",
+                }
+            )
+
+    out = pd.DataFrame(out_rows)
+    out.to_csv(cfg.output_path, index=False)
+    print(f"Wrote {len(out)} rows to {cfg.output_path}")
+
+
+if __name__ == "__main__":
+    main()
