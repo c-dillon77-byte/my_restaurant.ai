@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Lint (ruff)
+        run: ruff check .
+      - name: Run tests
+        run: pytest -q
+      - name: Smoke test the CLI on synthetic data
+        run: |
+          python scripts/generate_synthetic_data.py --output /tmp/sales.csv --weeks 8
+          python scripts/forecast_trimmed_mean.py --input /tmp/sales.csv --output /tmp/forecast.csv
