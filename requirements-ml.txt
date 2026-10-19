@@ -1,0 +1,3 @@
+# Optional: only needed for scripts/forecast_pytorch.py
+-r requirements.txt
+torch>=2.0

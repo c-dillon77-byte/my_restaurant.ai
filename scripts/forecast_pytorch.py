@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
-from datetime import timedelta
 from typing import Dict, Optional, Tuple
 
 import numpy as np
@@ -248,7 +247,9 @@ def main() -> None:
 
     # Build baseline feature for training rows
     df = df.sort_values(["store_id", "date"]).copy()
-    df["baseline"] = build_baseline_feature(df[["date", "store_id", "net_sales"]].assign(store_id=df["store_id"]), cfg.min_points)
+    df["baseline"] = build_baseline_feature(
+        df[["date", "store_id", "net_sales"]].assign(store_id=df["store_id"]), cfg.min_points
+    )
     df["baseline"] = df["baseline"].astype(np.float32)
 
     # Train only where baseline exists (otherwise the model is learning from weaker signals)
