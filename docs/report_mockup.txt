@@ -84,7 +84,7 @@ vs Last Month    +2.4%
 Forecast Confidence: HIGH
 Future Version (What CEOs Love)
 
-Eventually, your dashboard could include:
+Eventually, my dashboard could include:
 
 Metric	Forecast
 Sales	$55,440

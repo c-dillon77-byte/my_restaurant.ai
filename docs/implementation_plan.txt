@@ -165,7 +165,7 @@ Confirm whether the model is useful before giving it to managers.
 
 Validation process
 Choose a past week.
-Pretend you did not know the actual sales.
+Pretend I did not know the actual sales.
 Run the model using only data before that week.
 Compare forecast vs actual sales.
 Measure error percentage.
@@ -297,11 +297,11 @@ Phase 15: Optional Machine Learning Model
 Only move to PyTorch or ML after the baseline model proves value.
 
 Use ML when
-you have enough clean history
+I have enough clean history
 multiple stores are involved
 event/holiday/weather variables are available
 baseline forecasts are useful but limited
-you want automatic pattern learning
+I want automatic pattern learning
 Do not use ML just because it sounds advanced.
 
 The baseline model is easier to explain and easier to approve.
